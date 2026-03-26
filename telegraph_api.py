@@ -135,18 +135,17 @@ def build_article_content(
         if i > 0:
             content.append({"tag": "hr"})
 
-        children: list[dict | str] = [
+        fig_children: list[dict | str] = [
             {"tag": "img", "attrs": {"src": image_url}},
         ]
-        if caption:
-            children.append({"tag": "figcaption", "children": [caption]})
 
-        content.append({"tag": "figure", "children": children})
-        content.append({
-            "tag": "p",
-            "children": [
-                {"tag": "em", "children": [time_str]},
-            ],
-        })
+        caption_parts: list[dict | str] = []
+        if caption:
+            caption_parts.append(caption)
+            caption_parts.append(" — ")
+        caption_parts.append({"tag": "em", "children": [time_str]})
+        fig_children.append({"tag": "figcaption", "children": caption_parts})
+
+        content.append({"tag": "figure", "children": fig_children})
 
     return content
