@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime
-from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+EKB_TZ = ZoneInfo("Asia/Yekaterinburg")
 
 
 @dataclass
@@ -65,18 +67,19 @@ class Storage:
         photo_file_id: str,
         caption: str | None = None,
     ) -> int:
+        now_ekb = datetime.now(EKB_TZ).strftime("%Y-%m-%d %H:%M:%S")
         cursor = self.conn.execute(
             """
-            INSERT INTO food_entries (user_id, photo_file_id, caption)
-            VALUES (?, ?, ?)
+            INSERT INTO food_entries (user_id, photo_file_id, caption, created_at)
+            VALUES (?, ?, ?, ?)
             """,
-            (user_id, photo_file_id, caption),
+            (user_id, photo_file_id, caption, now_ekb),
         )
         self.conn.commit()
         return cursor.lastrowid  # type: ignore[return-value]
 
     def get_today_entries(self, user_id: int) -> list[FoodEntry]:
-        today = date.today().isoformat()
+        today = datetime.now(EKB_TZ).date().isoformat()
         rows = self.conn.execute(
             """
             SELECT * FROM food_entries
@@ -89,7 +92,7 @@ class Storage:
         return [FoodEntry.from_row(row) for row in rows]
 
     def clear_today_entries(self, user_id: int) -> int:
-        today = date.today().isoformat()
+        today = datetime.now(EKB_TZ).date().isoformat()
         cursor = self.conn.execute(
             """
             DELETE FROM food_entries

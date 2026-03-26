@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+EKB_TZ = ZoneInfo("Asia/Yekaterinburg")
 
 from telegram import LinkPreviewOptions, Update
 from telegram.ext import (
@@ -29,7 +32,7 @@ MONTHS_RU = [
 ]
 
 
-def format_date_ru(d: date) -> str:
+def format_date_ru(d: datetime) -> str:
     return f"{d.day} {MONTHS_RU[d.month]} {d.year}"
 
 
@@ -114,9 +117,10 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             time_str = entry.created_at.strftime("%H:%M")
             image_entries.append((image_url, entry.caption, time_str))
 
-        content = build_article_content(image_entries)
+        placeholder_url = await telegraph.get_placeholder_url()
+        content = build_article_content(image_entries, placeholder_url)
 
-        today = date.today()
+        today = datetime.now(EKB_TZ)
         title = f"Дневник питания — {format_date_ru(today)}"
         url = await telegraph.create_page(title, content)
 

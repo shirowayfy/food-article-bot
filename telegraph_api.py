@@ -13,6 +13,10 @@ TELEGRAPH_API = "https://api.telegra.ph"
 IMGBB_UPLOAD = "https://api.imgbb.com/1/upload"
 IMGBB_EXPIRATION = 2_592_000  # 30 days in seconds
 
+BLACK_SQUARE_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC"
+)
+
 
 @dataclass
 class TelegraphClient:
@@ -21,7 +25,7 @@ class TelegraphClient:
     author_url: str = ""
     _access_token: str | None = field(default=None, repr=False)
     _session: aiohttp.ClientSession | None = field(default=None, repr=False)
-
+    _placeholder_url: str | None = field(default=None, repr=False)
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -75,6 +79,12 @@ class TelegraphClient:
         logger.error("imgbb upload failed. Size=%d, response=%s", len(image_bytes), data)
         raise RuntimeError(f"Failed to upload image to imgbb: {data}")
 
+    async def get_placeholder_url(self) -> str:
+        if self._placeholder_url:
+            return self._placeholder_url
+        self._placeholder_url = await self.upload_image(BLACK_SQUARE_PNG, "thumb.png")
+        return self._placeholder_url
+
     async def create_page(
         self,
         title: str,
@@ -111,8 +121,15 @@ class TelegraphClient:
 
 def build_article_content(
     entries: list[tuple[str, str | None, str]],
+    placeholder_url: str | None = None,
 ) -> list[dict]:
     content: list[dict] = []
+
+    if placeholder_url:
+        content.append({
+            "tag": "figure",
+            "children": [{"tag": "img", "attrs": {"src": placeholder_url}}],
+        })
 
     for i, (image_url, caption, time_str) in enumerate(entries):
         if i > 0:
