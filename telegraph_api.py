@@ -10,7 +10,13 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 TELEGRAPH_API = "https://api.telegra.ph"
-TELEGRAPH_UPLOAD = "https://telegra.ph/upload"
+TELEGRAPH_UPLOAD = "https://graph.org/upload"
+
+UPLOAD_HEADERS = {
+    "accept": "application/json, text/javascript, */*; q=0.01",
+    "x-requested-with": "XMLHttpRequest",
+    "referer": "https://graph.org/",
+}
 
 
 @dataclass
@@ -51,9 +57,9 @@ class TelegraphClient:
 
         content_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
         form = aiohttp.FormData()
-        form.add_field("file0", image_bytes, filename=filename, content_type=content_type)
+        form.add_field("file", image_bytes, filename="blob", content_type=content_type)
 
-        async with session.post(TELEGRAPH_UPLOAD, data=form) as resp:
+        async with session.post(TELEGRAPH_UPLOAD, data=form, headers=UPLOAD_HEADERS) as resp:
             raw = await resp.text()
             logger.debug("Telegraph upload response (%s): %s", resp.status, raw[:500])
             try:
@@ -62,7 +68,7 @@ class TelegraphClient:
                 raise RuntimeError(f"Telegraph returned non-JSON: {raw[:200]}")
 
         if isinstance(data, list) and data and "src" in data[0]:
-            return f"https://telegra.ph{data[0]['src']}"
+            return f"https://graph.org{data[0]['src']}"
 
         logger.error("Telegraph upload failed. Size=%d, response=%s", len(image_bytes), data)
         raise RuntimeError(f"Failed to upload image to Telegraph: {data}")
