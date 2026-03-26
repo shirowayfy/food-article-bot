@@ -104,6 +104,21 @@ class Storage:
         self.conn.commit()
         return cursor.rowcount
 
+    def update_entry_time(self, entry_id: int, hour: int, minute: int) -> None:
+        """Update the time portion of an entry's created_at."""
+        row = self.conn.execute(
+            "SELECT created_at FROM food_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if not row:
+            return
+        current = datetime.fromisoformat(row["created_at"])
+        new_dt = current.replace(hour=hour, minute=minute, second=0)
+        self.conn.execute(
+            "UPDATE food_entries SET created_at = ? WHERE id = ?",
+            (new_dt.strftime("%Y-%m-%d %H:%M:%S"), entry_id),
+        )
+        self.conn.commit()
+
     def close(self) -> None:
         if self._conn:
             self._conn.close()

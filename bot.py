@@ -6,9 +6,16 @@ from zoneinfo import ZoneInfo
 
 EKB_TZ = ZoneInfo("Asia/Yekaterinburg")
 
-from telegram import LinkPreviewOptions, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    ReplyKeyboardMarkup,
+    Update,
+)
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -25,11 +32,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 MONTHS_RU = [
     "", "января", "февраля", "марта", "апреля", "мая", "июня",
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
 ]
+
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [["📋 Итог дня", "📊 Счётчик", "🗑 Очистить"]],
+    resize_keyboard=True,
+)
 
 
 def format_date_ru(d: datetime) -> str:
@@ -40,35 +51,128 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(  # type: ignore[union-attr]
         "Привет! Отправляй мне фото еды в течение дня.\n"
         "Можешь добавить подпись к фото.\n\n"
-        "Когда будешь готов — отправь /summary, и я создам "
-        "статью на Telegraph со всеми фото за сегодня.\n\n"
-        "Команды:\n"
-        "/summary — Создать статью за сегодня\n"
-        "/count — Сколько записей сегодня\n"
-        "/cancel — Очистить записи за сегодня",
+        "Когда будешь готов — нажми «📋 Итог дня», и я создам "
+        "статью на Telegraph со всеми фото за сегодня.",
+        reply_markup=MAIN_KEYBOARD,
     )
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Save incoming photo with optional caption."""
     if not update.message or not update.message.photo:
         return
 
     storage: Storage = context.bot_data["storage"]
     user_id = update.effective_user.id  # type: ignore[union-attr]
 
-    # Get the largest photo (best quality)
     photo = update.message.photo[-1]
     caption = update.message.caption
 
-    storage.save_entry(user_id, photo.file_id, caption)
+    entry_id = storage.save_entry(user_id, photo.file_id, caption)
 
     entries = storage.get_today_entries(user_id)
-    await update.message.reply_text(f"Сохранено! ({len(entries)} за сегодня)")
+    now_str = datetime.now(EKB_TZ).strftime("%H:%M")
+
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "⏰ Изменить время", callback_data=f"tc:{entry_id}"
+                ),
+                InlineKeyboardButton("✅ OK", callback_data=f"tok:{entry_id}"),
+            ]
+        ]
+    )
+
+    await update.message.reply_text(
+        f"Сохранено! ({len(entries)} за сегодня)\nВремя: {now_str}",
+        reply_markup=keyboard,
+    )
+
+
+async def handle_time_change(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    await query.answer()  # type: ignore[union-attr]
+    entry_id = query.data.split(":")[1]  # type: ignore[union-attr]
+
+    rows = []
+    for start in range(6, 24, 6):
+        row = [
+            InlineKeyboardButton(
+                f"{h:02d}", callback_data=f"th:{entry_id}:{h}"
+            )
+            for h in range(start, min(start + 6, 24))
+        ]
+        rows.append(row)
+
+    await query.edit_message_text(  # type: ignore[union-attr]
+        "Выбери час:",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+
+
+async def handle_hour_select(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    await query.answer()  # type: ignore[union-attr]
+    _, entry_id, hour = query.data.split(":")  # type: ignore[union-attr]
+
+    minutes = [0, 15, 30, 45]
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"{int(hour):02d}:{m:02d}",
+                    callback_data=f"tm:{entry_id}:{hour}:{m}",
+                )
+                for m in minutes
+            ]
+        ]
+    )
+
+    await query.edit_message_text(  # type: ignore[union-attr]
+        "Выбери минуты:",
+        reply_markup=keyboard,
+    )
+
+
+async def handle_minute_select(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    await query.answer()  # type: ignore[union-attr]
+    _, entry_id, hour, minute = query.data.split(":")  # type: ignore[union-attr]
+
+    storage: Storage = context.bot_data["storage"]
+    storage.update_entry_time(int(entry_id), int(hour), int(minute))
+
+    new_time = f"{int(hour):02d}:{int(minute):02d}"
+    await query.edit_message_text(f"✅ Время изменено на {new_time}")  # type: ignore[union-attr]
+
+
+async def handle_time_ok(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    query = update.callback_query
+    await query.answer()  # type: ignore[union-attr]
+    await query.edit_message_reply_markup(reply_markup=None)  # type: ignore[union-attr]
+
+
+async def handle_text_buttons(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    text = update.message.text  # type: ignore[union-attr]
+    if text == "📋 Итог дня":
+        await summary_command(update, context)
+    elif text == "📊 Счётчик":
+        await count_command(update, context)
+    elif text == "🗑 Очистить":
+        await cancel_command(update, context)
 
 
 async def count_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show count of today's entries."""
     if not update.message:
         return
 
@@ -83,7 +187,6 @@ async def count_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Generate Telegraph article from today's entries."""
     if not update.message:
         return
 
@@ -142,7 +245,6 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Clear today's entries."""
     if not update.message:
         return
 
@@ -157,7 +259,6 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def post_init(application: Application) -> None:  # type: ignore[type-arg]
-    """Initialize shared resources after app starts."""
     config: Config = application.bot_data["config"]
 
     storage = Storage(config.db_path)
@@ -169,14 +270,12 @@ async def post_init(application: Application) -> None:  # type: ignore[type-arg]
         author_name=config.telegraph_author_name,
         author_url=config.telegraph_author_url,
     )
-    # Account created lazily on first /summary call
     application.bot_data["telegraph"] = telegraph
 
     logger.info("Bot initialized. Storage: %s", config.db_path)
 
 
 async def post_shutdown(application: Application) -> None:  # type: ignore[type-arg]
-    """Clean up resources on shutdown."""
     storage: Storage | None = application.bot_data.get("storage")
     if storage:
         storage.close()
@@ -201,12 +300,18 @@ def main() -> None:
 
     app.bot_data["config"] = config
 
-    # Register handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("summary", summary_command))
     app.add_handler(CommandHandler("count", count_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_buttons)
+    )
+    app.add_handler(CallbackQueryHandler(handle_time_change, pattern=r"^tc:"))
+    app.add_handler(CallbackQueryHandler(handle_hour_select, pattern=r"^th:"))
+    app.add_handler(CallbackQueryHandler(handle_minute_select, pattern=r"^tm:"))
+    app.add_handler(CallbackQueryHandler(handle_time_ok, pattern=r"^tok:"))
 
     logger.info("Starting bot...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
