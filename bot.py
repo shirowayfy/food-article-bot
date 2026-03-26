@@ -228,8 +228,9 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         url = await telegraph.create_page(title, content)
 
         await progress.delete()
-        await update.message.reply_text(
-            f"Твой дневник питания за сегодня:\n{url}",
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,  # type: ignore[union-attr]
+            text=f"Твой дневник питания за сегодня:\n{url}",
             link_preview_options=LinkPreviewOptions(
                 url=url,
                 prefer_large_media=True,
