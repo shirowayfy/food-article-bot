@@ -109,33 +109,26 @@ class TelegraphClient:
 
 
 def build_article_content(
-    entries: list[tuple[str, str | None]],
+    entries: list[tuple[str, str | None, str]],
 ) -> list[dict]:
-    """Build Telegraph Node content from (image_url, caption) pairs.
-
-    Returns a list of Telegraph Node elements ready for createPage.
-    """
     content: list[dict] = []
 
-    for i, (image_url, caption) in enumerate(entries):
+    for i, (image_url, caption, time_str) in enumerate(entries):
         if i > 0:
             content.append({"tag": "hr"})
 
-        # Image
+        children: list[dict | str] = [
+            {"tag": "img", "attrs": {"src": image_url}},
+        ]
+        if caption:
+            children.append({"tag": "figcaption", "children": [caption]})
+
+        content.append({"tag": "figure", "children": children})
         content.append({
-            "tag": "figure",
+            "tag": "p",
             "children": [
-                {"tag": "img", "attrs": {"src": image_url}},
-                *(
-                    [{"tag": "figcaption", "children": [caption]}]
-                    if caption
-                    else []
-                ),
+                {"tag": "em", "children": [time_str]},
             ],
         })
-
-        # Caption as separate paragraph if long
-        if caption and len(caption) > 100:
-            content.append({"tag": "p", "children": [caption]})
 
     return content

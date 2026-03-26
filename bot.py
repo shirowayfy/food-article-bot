@@ -23,17 +23,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+MONTHS_RU = [
+    "", "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+]
+
+
+def format_date_ru(d: date) -> str:
+    return f"{d.day} {MONTHS_RU[d.month]} {d.year}"
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /start command."""
     await update.message.reply_text(  # type: ignore[union-attr]
-        "Hey! Send me photos of your food throughout the day.\n"
-        "Add a caption to describe what you're eating.\n\n"
-        "When you're ready, send /summary to get a Telegraph article "
-        "with all your food photos for today.\n\n"
-        "Commands:\n"
-        "/summary - Generate today's food diary article\n"
-        "/count - How many entries today\n"
-        "/cancel - Clear today's entries",
+        "Привет! Отправляй мне фото еды в течение дня.\n"
+        "Можешь добавить подпись к фото.\n\n"
+        "Когда будешь готов — отправь /summary, и я создам "
+        "статью на Telegraph со всеми фото за сегодня.\n\n"
+        "Команды:\n"
+        "/summary — Создать статью за сегодня\n"
+        "/count — Сколько записей сегодня\n"
+        "/cancel — Очистить записи за сегодня",
     )
 
 
@@ -52,9 +61,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     storage.save_entry(user_id, photo.file_id, caption)
 
     entries = storage.get_today_entries(user_id)
-    await update.message.reply_text(
-        f"Saved! ({len(entries)} entr{'y' if len(entries) == 1 else 'ies'} today)"
-    )
+    await update.message.reply_text(f"Сохранено! ({len(entries)} за сегодня)")
 
 
 async def count_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -67,11 +74,9 @@ async def count_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     entries = storage.get_today_entries(user_id)
 
     if not entries:
-        await update.message.reply_text("No food entries today. Send me some photos!")
+        await update.message.reply_text("Сегодня записей нет. Отправь мне фото!")
     else:
-        await update.message.reply_text(
-            f"You have {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} today."
-        )
+        await update.message.reply_text(f"Сегодня записей: {len(entries)}")
 
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -87,44 +92,40 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if not entries:
         await update.message.reply_text(
-            "No food entries today. Send me some photos first!"
+            "Сегодня записей нет. Сначала отправь фото!"
         )
         return
 
     progress = await update.message.reply_text(
-        f"Creating article from {len(entries)} entries... Uploading photos..."
+        f"Создаю статью из {len(entries)} записей... Загружаю фото..."
     )
 
     try:
-        # Download and upload each photo to Telegraph
-        image_entries: list[tuple[str, str | None]] = []
+        image_entries: list[tuple[str, str | None, str]] = []
 
         for entry in entries:
-            # Download photo from Telegram
             file = await context.bot.get_file(entry.photo_file_id)
             photo_bytes = await file.download_as_bytearray()
 
-            # Upload to Telegraph
             image_url = await telegraph.upload_image(
                 bytes(photo_bytes),
                 filename=f"food_{entry.id}.jpg",
             )
-            image_entries.append((image_url, entry.caption))
+            time_str = entry.created_at.strftime("%H:%M")
+            image_entries.append((image_url, entry.caption, time_str))
 
-        # Build article content
         content = build_article_content(image_entries)
 
-        # Create Telegraph page
         today = date.today()
-        title = f"Food Diary - {today.strftime('%B %d, %Y')}"
+        title = f"Дневник питания — {format_date_ru(today)}"
         url = await telegraph.create_page(title, content)
 
-        await progress.edit_text(f"Your food diary for today:\n{url}")
+        await progress.edit_text(f"Твой дневник питания за сегодня:\n{url}")
 
     except Exception:
         logger.exception("Failed to create summary")
         await progress.edit_text(
-            "Sorry, something went wrong creating the article. Try again later."
+            "Что-то пошло не так при создании статьи. Попробуй позже."
         )
 
 
@@ -138,11 +139,9 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     count = storage.clear_today_entries(user_id)
 
     if count == 0:
-        await update.message.reply_text("Nothing to clear — no entries today.")
+        await update.message.reply_text("Нечего удалять — записей за сегодня нет.")
     else:
-        await update.message.reply_text(
-            f"Cleared {count} entr{'y' if count == 1 else 'ies'} for today."
-        )
+        await update.message.reply_text(f"Удалено записей: {count}")
 
 
 async def post_init(application: Application) -> None:  # type: ignore[type-arg]
