@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from telegram import Update
+from telegram import LinkPreviewOptions, Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -121,7 +121,15 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         title = f"Дневник питания — {format_date_ru(today)}"
         url = await telegraph.create_page(title, content)
 
-        await progress.edit_text(f"Твой дневник питания за сегодня:\n{url}")
+        await progress.delete()
+        await update.message.reply_text(
+            f"Твой дневник питания за сегодня:\n{url}",
+            link_preview_options=LinkPreviewOptions(
+                url=url,
+                prefer_large_media=True,
+                show_above_text=True,
+            ),
+        )
 
     except Exception:
         logger.exception("Failed to create summary")
