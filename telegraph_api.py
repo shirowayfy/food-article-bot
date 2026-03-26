@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
-import mimetypes
 from dataclasses import dataclass, field
 
 import aiohttp
@@ -10,17 +10,13 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 TELEGRAPH_API = "https://api.telegra.ph"
-TELEGRAPH_UPLOAD = "https://graph.org/upload"
-
-UPLOAD_HEADERS = {
-    "accept": "application/json, text/javascript, */*; q=0.01",
-    "x-requested-with": "XMLHttpRequest",
-    "referer": "https://graph.org/",
-}
+IMGBB_UPLOAD = "https://api.imgbb.com/1/upload"
+IMGBB_EXPIRATION = 2_592_000  # 30 days in seconds
 
 
 @dataclass
 class TelegraphClient:
+    imgbb_api_key: str = ""
     author_name: str = "Food Diary"
     author_url: str = ""
     _access_token: str | None = field(default=None, repr=False)
@@ -52,26 +48,31 @@ class TelegraphClient:
             return self._access_token  # type: ignore[return-value]
 
     async def upload_image(self, image_bytes: bytes, filename: str = "photo.jpg") -> str:
-        """Upload image to Telegraph, return the full URL."""
+        """Upload image to imgbb, return the direct display URL."""
         session = await self._get_session()
 
-        content_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
-        form = aiohttp.FormData()
-        form.add_field("file", image_bytes, filename="blob", content_type=content_type)
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        payload = {
+            "key": self.imgbb_api_key,
+            "image": b64,
+            "expiration": str(IMGBB_EXPIRATION),
+        }
 
-        async with session.post(TELEGRAPH_UPLOAD, data=form, headers=UPLOAD_HEADERS) as resp:
+        async with session.post(IMGBB_UPLOAD, data=payload) as resp:
             raw = await resp.text()
-            logger.debug("Telegraph upload response (%s): %s", resp.status, raw[:500])
+            logger.debug("imgbb upload response (%s): %s", resp.status, raw[:500])
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
-                raise RuntimeError(f"Telegraph returned non-JSON: {raw[:200]}")
+                raise RuntimeError(f"imgbb returned non-JSON: {raw[:200]}")
 
-        if isinstance(data, list) and data and "src" in data[0]:
-            return f"https://graph.org{data[0]['src']}"
+        if data.get("success") and "data" in data:
+            url = data["data"]["display_url"]
+            logger.info("Uploaded image to imgbb: %s", url)
+            return url
 
-        logger.error("Telegraph upload failed. Size=%d, response=%s", len(image_bytes), data)
-        raise RuntimeError(f"Failed to upload image to Telegraph: {data}")
+        logger.error("imgbb upload failed. Size=%d, response=%s", len(image_bytes), data)
+        raise RuntimeError(f"Failed to upload image to imgbb: {data}")
 
     async def create_page(
         self,

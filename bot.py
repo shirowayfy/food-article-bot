@@ -154,6 +154,7 @@ async def post_init(application: Application) -> None:  # type: ignore[type-arg]
     application.bot_data["storage"] = storage
 
     telegraph = TelegraphClient(
+        imgbb_api_key=config.imgbb_api_key,
         author_name=config.telegraph_author_name,
         author_url=config.telegraph_author_url,
     )
