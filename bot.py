@@ -114,8 +114,7 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             time_str = entry.created_at.strftime("%H:%M")
             image_entries.append((image_url, entry.caption, time_str))
 
-        placeholder_url = await telegraph.get_placeholder_url()
-        content = build_article_content(image_entries, placeholder_url)
+        content = build_article_content(image_entries)
 
         today = date.today()
         title = f"Дневник питания — {format_date_ru(today)}"
