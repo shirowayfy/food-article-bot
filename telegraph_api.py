@@ -127,7 +127,10 @@ def build_article_content(
     content: list[dict] = []
 
     if placeholder_url:
-        content.append({"tag": "img", "attrs": {"src": placeholder_url}})
+        content.append({
+            "tag": "figure",
+            "children": [{"tag": "img", "attrs": {"src": placeholder_url}}],
+        })
 
     for i, (image_url, caption, time_str) in enumerate(entries):
         if i > 0:
