@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 from dataclasses import dataclass, field
 
 import aiohttp
@@ -48,15 +49,22 @@ class TelegraphClient:
         """Upload image to Telegraph, return the full URL."""
         session = await self._get_session()
 
+        content_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
         form = aiohttp.FormData()
-        form.add_field("file0", image_bytes, filename=filename, content_type="image/jpeg")
+        form.add_field("file0", image_bytes, filename=filename, content_type=content_type)
 
         async with session.post(TELEGRAPH_UPLOAD, data=form) as resp:
-            data = await resp.json()
+            raw = await resp.text()
+            logger.debug("Telegraph upload response (%s): %s", resp.status, raw[:500])
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                raise RuntimeError(f"Telegraph returned non-JSON: {raw[:200]}")
 
         if isinstance(data, list) and data and "src" in data[0]:
             return f"https://telegra.ph{data[0]['src']}"
 
+        logger.error("Telegraph upload failed. Size=%d, response=%s", len(image_bytes), data)
         raise RuntimeError(f"Failed to upload image to Telegraph: {data}")
 
     async def create_page(
