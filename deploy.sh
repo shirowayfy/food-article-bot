@@ -10,14 +10,27 @@ if ! command -v apt-get >/dev/null 2>&1; then
     exit 1
 fi
 
+# Detect privilege escalation tool. Order: sudo > usudo > doas > already-root.
 if [ "$(id -u)" -eq 0 ]; then
+    SUDO=""
     echo "Внимание: запуск от root — сервис будет работать от root."
-    echo "Лучше выйти и запустить от обычного юзера с sudo (Ctrl+C для отмены)."
+    echo "Лучше выйти и запустить от обычного юзера (Ctrl+C для отмены)."
     sleep 3
+elif command -v sudo >/dev/null 2>&1; then
+    SUDO="sudo"
+elif command -v usudo >/dev/null 2>&1; then
+    SUDO="usudo"
+elif command -v doas >/dev/null 2>&1; then
+    SUDO="doas"
+else
+    echo "Не нашёл sudo/usudo/doas. Запусти от root или установи sudo." >&2
+    exit 1
 fi
 
-echo "==> Проверяю sudo..."
-sudo -v
+if [ -n "$SUDO" ]; then
+    echo "==> Проверяю $SUDO (может попросить пароль)..."
+    $SUDO true
+fi
 
 read -rsp "BOT_TOKEN (от @BotFather): " BOT_TOKEN; echo
 [ -n "$BOT_TOKEN" ] || { echo "BOT_TOKEN пустой, выход" >&2; exit 1; }
@@ -29,16 +42,16 @@ read -rp "TELEGRAPH_AUTHOR_NAME [Food Diary]: " TELEGRAPH_AUTHOR_NAME
 TELEGRAPH_AUTHOR_NAME=${TELEGRAPH_AUTHOR_NAME:-Food Diary}
 
 echo "==> Устанавливаю системные пакеты..."
-sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip git
+$SUDO apt-get update
+$SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip git
 
 echo "==> Получаю код из $REPO_URL..."
 if [ -d "$INSTALL_DIR/.git" ]; then
-    sudo chown -R "$USER:$USER" "$INSTALL_DIR"
+    $SUDO chown -R "$USER:$USER" "$INSTALL_DIR"
     git -C "$INSTALL_DIR" pull --ff-only
 else
-    sudo mkdir -p "$INSTALL_DIR"
-    sudo chown "$USER:$USER" "$INSTALL_DIR"
+    $SUDO mkdir -p "$INSTALL_DIR"
+    $SUDO chown "$USER:$USER" "$INSTALL_DIR"
     git clone "$REPO_URL" "$INSTALL_DIR"
 fi
 
@@ -60,7 +73,7 @@ EOF
 chmod 600 "$INSTALL_DIR/.env"
 
 echo "==> Создаю systemd unit /etc/systemd/system/${SERVICE_NAME}.service..."
-sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null <<EOF
+$SUDO tee "/etc/systemd/system/${SERVICE_NAME}.service" > /dev/null <<EOF
 [Unit]
 Description=Food Diary Telegram Bot
 After=network-online.target
@@ -80,15 +93,16 @@ WantedBy=multi-user.target
 EOF
 
 echo "==> Запускаю сервис..."
-sudo systemctl daemon-reload
-sudo systemctl enable "$SERVICE_NAME"
-sudo systemctl restart "$SERVICE_NAME"
+$SUDO systemctl daemon-reload
+$SUDO systemctl enable "$SERVICE_NAME"
+$SUDO systemctl restart "$SERVICE_NAME"
 
 sleep 2
-sudo systemctl --no-pager status "$SERVICE_NAME" || true
+$SUDO systemctl --no-pager status "$SERVICE_NAME" || true
 
+SUDO_HINT=${SUDO:-}
 echo
 echo "Готово."
 echo "  Логи:       journalctl -u $SERVICE_NAME -f"
-echo "  Рестарт:    sudo systemctl restart $SERVICE_NAME"
-echo "  Обновление: cd $INSTALL_DIR && git pull && sudo systemctl restart $SERVICE_NAME"
+echo "  Рестарт:    $SUDO_HINT systemctl restart $SERVICE_NAME"
+echo "  Обновление: cd $INSTALL_DIR && git pull && $SUDO_HINT systemctl restart $SERVICE_NAME"
