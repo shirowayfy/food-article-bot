@@ -43,7 +43,7 @@ TELEGRAPH_AUTHOR_NAME=${TELEGRAPH_AUTHOR_NAME:-Food Diary}
 
 echo "==> Устанавливаю системные пакеты..."
 $SUDO apt-get update
-$SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip git
+$SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip git
 
 echo "==> Получаю код из $REPO_URL..."
 if [ -d "$INSTALL_DIR/.git" ]; then
